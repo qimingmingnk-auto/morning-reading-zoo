@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>早读动物园 🦁</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #87CEEB 0%, #98FB98 50%, #FFD700 100%);
+      min-height: 100vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ===== HUD (top bar) ===== */
+    #hud {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.85);
+      backdrop-filter: blur(8px);
+      border-bottom: 3px solid #FFD700;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .hud-title {
+      font-size: 22px;
+      font-weight: 900;
+      color: #FF6B35;
+      white-space: nowrap;
+    }
+
+    .hud-stats {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .stat-box {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      border-radius: 12px;
+      padding: 6px 14px;
+      text-align: center;
+      min-width: 90px;
+    }
+    .stat-box.green { background: linear-gradient(135deg, #11998e, #38ef7d); }
+    .stat-box.orange { background: linear-gradient(135deg, #f7971e, #ffd200); color: #333; }
+
+    .stat-label { font-size: 11px; opacity: 0.9; }
+    .stat-value { font-size: 20px; font-weight: 900; line-height: 1.2; }
+
+    /* dB meter bar */
+    #db-bar-wrap {
+      flex: 1;
+      min-width: 140px;
+      max-width: 260px;
+    }
+    #db-bar-bg {
+      height: 18px;
+      background: #ddd;
+      border-radius: 9px;
+      overflow: hidden;
+      position: relative;
+    }
+    #db-bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 9px;
+      background: linear-gradient(90deg, #56ab2f, #f7971e, #f44336);
+      transition: width 0.1s;
+    }
+    #db-threshold-marker {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 3px;
+      background: #333;
+      border-radius: 2px;
+    }
+    #db-bar-label {
+      font-size: 11px;
+      color: #555;
+      margin-top: 2px;
+      text-align: center;
+    }
+
+    /* ===== Buttons ===== */
+    .btn {
+      border: none;
+      border-radius: 20px;
+      padding: 10px 22px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.1s;
+      white-space: nowrap;
+    }
+    .btn:active { transform: scale(0.95); }
+
+    #btn-start {
+      background: linear-gradient(135deg, #11998e, #38ef7d);
+      color: white;
+      box-shadow: 0 4px 12px rgba(17,153,142,0.4);
+    }
+    #btn-start.listening {
+      background: linear-gradient(135deg, #f44336, #ff9800);
+      box-shadow: 0 4px 12px rgba(244,67,54,0.4);
+    }
+    #btn-settings {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+      box-shadow: 0 4px 12px rgba(102,126,234,0.4);
+    }
+
+    /* ===== Animal stage ===== */
+    #stage {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+    }
+
+    .animal {
+      position: absolute;
+      font-size: 52px;
+      line-height: 1;
+      user-select: none;
+      animation: float-in 0.4s ease-out forwards;
+      will-change: transform, opacity;
+    }
+    .animal.leaving {
+      animation: float-out 6s linear forwards;
+    }
+
+    @keyframes float-in {
+      from { transform: scale(0) rotate(-20deg); opacity: 0; }
+      to   { transform: scale(1) rotate(0deg);  opacity: 1; }
+    }
+    @keyframes float-out {
+      0%   { opacity: 1; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(120px); }
+    }
+
+    /* subtle wobble for idle animals */
+    @keyframes wobble {
+      0%,100% { transform: rotate(-3deg) scale(1); }
+      50%      { transform: rotate(3deg) scale(1.05); }
+    }
+    .animal.idle { animation: wobble 2s ease-in-out infinite; }
+
+    /* ===== Settings modal ===== */
+    #settings-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    #settings-overlay.open { display: flex; }
+
+    #settings-panel {
+      background: white;
+      border-radius: 24px;
+      padding: 28px 32px;
+      width: 460px;
+      max-width: 95vw;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    #settings-panel h2 {
+      font-size: 22px;
+      color: #FF6B35;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .setting-row {
+      margin-bottom: 20px;
+    }
+    .setting-label {
+      font-size: 15px;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .setting-label span { color: #667eea; }
+
+    input[type=range] {
+      width: 100%;
+      accent-color: #667eea;
+      height: 6px;
+    }
+
+    /* Animal checkboxes */
+    #animal-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .animal-check {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      cursor: pointer;
+      padding: 6px 4px;
+      border-radius: 10px;
+      border: 2px solid transparent;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .animal-check.checked {
+      border-color: #667eea;
+      background: #f0eeff;
+    }
+    .animal-check input { display: none; }
+    .animal-emoji { font-size: 28px; line-height: 1; }
+    .animal-name { font-size: 10px; color: #555; }
+
+    .settings-btns {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+    #btn-reset {
+      flex: 1;
+      background: #eee;
+      color: #555;
+    }
+    #btn-save {
+      flex: 2;
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      color: white;
+    }
+
+    /* ===== Intro overlay ===== */
+    #intro {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(135deg, #87CEEB 0%, #98FB98 50%, #FFD700 100%);
+      z-index: 300;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      transition: opacity 0.5s;
+    }
+    #intro h1 { font-size: 52px; color: white; text-shadow: 2px 4px 8px rgba(0,0,0,0.2); }
+    #intro p  { font-size: 18px; color: rgba(255,255,255,0.9); text-align: center; max-width: 380px; line-height: 1.6; }
+    #btn-enter {
+      background: white;
+      color: #FF6B35;
+      font-size: 20px;
+      padding: 14px 40px;
+      border-radius: 30px;
+      border: none;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      transition: transform 0.1s;
+    }
+    #btn-enter:active { transform: scale(0.95); }
+
+    /* ===== Listening pulse ring ===== */
+    #pulse-ring {
+      display: none;
+      position: fixed;
+      bottom: 24px; right: 24px;
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      background: rgba(255,80,80,0.15);
+      z-index: 99;
+    }
+    #pulse-ring.active { display: block; animation: pulse-ring 1.4s ease-out infinite; }
+    @keyframes pulse-ring {
+      0%   { transform: scale(0.8); opacity: 1; }
+      100% { transform: scale(1.8); opacity: 0; }
+    }
+
+    /* ===== Loud indicator banner ===== */
+    #loud-banner {
+      position: fixed;
+      top: 80px; left: 50%;
+      transform: translateX(-50%) translateY(-120px);
+      background: linear-gradient(135deg, #f7971e, #ffd200);
+      color: #333;
+      font-size: 18px;
+      font-weight: 900;
+      padding: 10px 28px;
+      border-radius: 30px;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+      z-index: 150;
+      transition: transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+      white-space: nowrap;
+    }
+    #loud-banner.visible { transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<!-- Intro screen -->
+<div id="intro">
+  <div style="font-size:72px">🦁🐘🐼🦊🐸</div>
+  <h1>早读动物园</h1>
+  <p>大声朗读，动物就会跑来！<br>声音越大，动物越多！</p>
+  <button id="btn-enter" onclick="enterApp()">开始使用 →</button>
+</div>
+
+<!-- Loud banner -->
+<div id="loud-banner">🎉 太棒了！继续加油！</div>
+
+<!-- Pulse ring indicator -->
+<div id="pulse-ring"></div>
+
+<!-- Top HUD -->
+<div id="hud" style="display:none">
+  <div class="hud-title">🦁 早读动物园</div>
+
+  <div class="hud-stats">
+    <div class="stat-box green">
+      <div class="stat-label">当前分贝</div>
+      <div class="stat-value" id="stat-db">--</div>
+    </div>
+    <div class="stat-box orange">
+      <div class="stat-label">阈值</div>
+      <div class="stat-value" id="stat-threshold">50</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">大声朗读</div>
+      <div class="stat-value" id="stat-timer">0:00</div>
+    </div>
+    <div class="stat-box" style="background:linear-gradient(135deg,#f093fb,#f5576c)">
+      <div class="stat-label">动物数量</div>
+      <div class="stat-value" id="stat-count">0</div>
+    </div>
+  </div>
+
+  <!-- dB bar -->
+  <div id="db-bar-wrap">
+    <div id="db-bar-bg">
+      <div id="db-bar-fill"></div>
+      <div id="db-threshold-marker"></div>
+    </div>
+    <div id="db-bar-label">音量表</div>
+  </div>
+
+  <div style="display:flex;gap:8px">
+    <button class="btn" id="btn-start" onclick="toggleListening()">开始监听</button>
+    <button class="btn" id="btn-settings" onclick="openSettings()">⚙ 设置</button>
+  </div>
+</div>
+
+<!-- Animal stage -->
+<div id="stage"></div>
+
+<!-- Settings modal -->
+<div id="settings-overlay" onclick="overlayClick(event)">
+  <div id="settings-panel">
+    <h2>⚙️ 设置</h2>
+
+    <div class="setting-row">
+      <div class="setting-label">分贝阈值 <span id="lbl-threshold">50 dB</span></div>
+      <input type="range" id="sl-threshold" min="30" max="90" value="50"
+             oninput="updateThresholdLabel()">
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">动物生成速度 <span id="lbl-speed">每 5 秒/只</span></div>
+      <input type="range" id="sl-speed" min="1" max="60" value="5"
+             oninput="updateSpeedLabel()">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#999;margin-top:2px">
+        <span>最快(1s)</span><span>最慢(60s)</span>
+      </div>
+    </div>
+
+    <div class="setting-row">
+      <div class="setting-label">动物种类</div>
+      <div id="animal-grid"></div>
+    </div>
+
+    <div class="settings-btns">
+      <button class="btn" id="btn-reset" onclick="resetDefaults()">重置默认</button>
+      <button class="btn" id="btn-save" onclick="saveSettings()">保存设置</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== Animal data =====
+const ANIMALS = [
+  { emoji: '🦁', name: '狮子' },
+  { emoji: '🐘', name: '大象' },
+  { emoji: '🐼', name: '熊猫' },
+  { emoji: '🦊', name: '狐狸' },
+  { emoji: '🐸', name: '青蛙' },
+  { emoji: '🐯', name: '老虎' },
+  { emoji: '🐻', name: '熊' },
+  { emoji: '🦒', name: '长颈鹿' },
+  { emoji: '🦓', name: '斑马' },
+  { emoji: '🐬', name: '海豚' },
+  { emoji: '🐧', name: '企鹅' },
+  { emoji: '🦜', name: '鹦鹉' },
+  { emoji: '🐢', name: '乌龟' },
+  { emoji: '🦋', name: '蝴蝶' },
+  { emoji: '🐙', name: '章鱼' },
+];
+
+// ===== State =====
+let settings = loadSettings();
+let isListening = false;
+let audioCtx = null;
+let analyser = null;
+let micStream = null;
+let dataArray = null;
+let animationFrame = null;
+let spawnTimer = null;
+let loudTimer = null;
+let loudSeconds = 0;
+let isLoud = false;
+let animalEls = [];
+let animalCount = 0;
+
+// ===== Settings persistence =====
+function defaultSettings() {
+  return {
+    threshold: 50,
+    speed: 5,
+    enabledAnimals: ANIMALS.map(a => a.emoji),
+  };
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem('mrz-settings');
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return defaultSettings();
+}
+
+function saveSettingsToStorage() {
+  localStorage.setItem('mrz-settings', JSON.stringify(settings));
+}
+
+// ===== Intro =====
+function enterApp() {
+  document.getElementById('intro').style.opacity = '0';
+  setTimeout(() => {
+    document.getElementById('intro').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+  }, 500);
+  applySettingsToUI();
+  updateThresholdMarker();
+}
+
+// ===== Settings panel =====
+function buildAnimalGrid() {
+  const grid = document.getElementById('animal-grid');
+  grid.innerHTML = '';
+  ANIMALS.forEach(a => {
+    const div = document.createElement('div');
+    const checked = settings.enabledAnimals.includes(a.emoji);
+    div.className = 'animal-check' + (checked ? ' checked' : '');
+    div.innerHTML = `
+      <input type="checkbox" ${checked ? 'checked' : ''} data-emoji="${a.emoji}">
+      <div class="animal-emoji">${a.emoji}</div>
+      <div class="animal-name">${a.name}</div>
+    `;
+    div.addEventListener('click', () => {
+      const inp = div.querySelector('input');
+      const willCheck = !inp.checked;
+      // enforce at least one selected
+      const currentChecked = grid.querySelectorAll('input:checked').length;
+      if (!willCheck && currentChecked <= 1) return;
+      inp.checked = willCheck;
+      div.classList.toggle('checked', willCheck);
+    });
+    grid.appendChild(div);
+  });
+}
+
+function applySettingsToUI() {
+  document.getElementById('sl-threshold').value = settings.threshold;
+  document.getElementById('sl-speed').value = settings.speed;
+  updateThresholdLabel();
+  updateSpeedLabel();
+  buildAnimalGrid();
+  document.getElementById('stat-threshold').textContent = settings.threshold;
+}
+
+function updateThresholdLabel() {
+  const v = document.getElementById('sl-threshold').value;
+  document.getElementById('lbl-threshold').textContent = v + ' dB';
+}
+
+function updateSpeedLabel() {
+  const v = document.getElementById('sl-speed').value;
+  document.getElementById('lbl-speed').textContent = '每 ' + v + ' 秒/只';
+}
+
+function openSettings() {
+  applySettingsToUI();
+  document.getElementById('settings-overlay').classList.add('open');
+}
+
+function overlayClick(e) {
+  if (e.target === document.getElementById('settings-overlay')) closeSettings();
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.remove('open');
+}
+
+function resetDefaults() {
+  const d = defaultSettings();
+  document.getElementById('sl-threshold').value = d.threshold;
+  document.getElementById('sl-speed').value = d.speed;
+  updateThresholdLabel();
+  updateSpeedLabel();
+  // reset checkboxes
+  const grid = document.getElementById('animal-grid');
+  grid.querySelectorAll('.animal-check').forEach(div => {
+    const inp = div.querySelector('input');
+    inp.checked = true;
+    div.classList.add('checked');
+  });
+}
+
+function saveSettings() {
+  settings.threshold = parseInt(document.getElementById('sl-threshold').value);
+  settings.speed = parseInt(document.getElementById('sl-speed').value);
+  const checked = document.getElementById('animal-grid').querySelectorAll('input:checked');
+  settings.enabledAnimals = Array.from(checked).map(i => i.dataset.emoji);
+  saveSettingsToStorage();
+  document.getElementById('stat-threshold').textContent = settings.threshold;
+  updateThresholdMarker();
+  // restart spawn timer with new speed
+  if (isListening) restartSpawnTimer();
+  closeSettings();
+}
+
+// ===== Audio =====
+async function toggleListening() {
+  if (isListening) {
+    stopListening();
+  } else {
+    await startListening();
+  }
+}
+
+async function startListening() {
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+  } catch(e) {
+    alert('无法获取麦克风权限，请在浏览器中允许麦克风访问。');
+    return;
+  }
+
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.6;
+  const source = audioCtx.createMediaStreamSource(micStream);
+  source.connect(analyser);
+  dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+  isListening = true;
+  document.getElementById('btn-start').textContent = '停止监听';
+  document.getElementById('btn-start').classList.add('listening');
+  document.getElementById('pulse-ring').classList.add('active');
+
+  loudSeconds = 0;
+  isLoud = false;
+
+  measureLoop();
+  restartSpawnTimer();
+}
+
+function stopListening() {
+  isListening = false;
+  cancelAnimationFrame(animationFrame);
+  clearInterval(spawnTimer);
+  clearInterval(loudTimer);
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+
+  document.getElementById('btn-start').textContent = '开始监听';
+  document.getElementById('btn-start').classList.remove('listening');
+  document.getElementById('pulse-ring').classList.remove('active');
+  document.getElementById('stat-db').textContent = '--';
+  document.getElementById('db-bar-fill').style.width = '0%';
+
+  setLoudState(false);
+  // start all animals leaving
+  animalEls.forEach(el => startLeaving(el));
+}
+
+function measureLoop() {
+  if (!isListening) return;
+  analyser.getByteFrequencyData(dataArray);
+
+  // RMS → dB
+  let sum = 0;
+  for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] * dataArray[i];
+  const rms = Math.sqrt(sum / dataArray.length);
+  const db = rms > 0 ? Math.round(20 * Math.log10(rms / 255) + 90) : 0;
+  // db range roughly 0-90
+
+  const clamped = Math.max(0, Math.min(90, db));
+  document.getElementById('stat-db').textContent = clamped + ' dB';
+
+  // bar fill
+  const pct = (clamped / 90) * 100;
+  document.getElementById('db-bar-fill').style.width = pct + '%';
+
+  const loud = clamped >= settings.threshold;
+  if (loud !== isLoud) setLoudState(loud);
+
+  animationFrame = requestAnimationFrame(measureLoop);
+}
+
+function setLoudState(loud) {
+  isLoud = loud;
+  if (loud) {
+    // start loud timer
+    loudTimer = setInterval(() => {
+      loudSeconds++;
+      const m = Math.floor(loudSeconds / 60);
+      const s = loudSeconds % 60;
+      document.getElementById('stat-timer').textContent =
+        m + ':' + String(s).padStart(2, '0');
+    }, 1000);
+    showLoudBanner();
+    // stop any leaving animals
+    animalEls.forEach(el => {
+      if (el.classList.contains('leaving')) {
+        el.classList.remove('leaving');
+        el.style.animation = '';
+        void el.offsetWidth;
+        el.classList.add('idle');
+      }
+    });
+  } else {
+    clearInterval(loudTimer);
+    // let animals drift away
+    animalEls.forEach(el => startLeaving(el));
+  }
+}
+
+function showLoudBanner() {
+  const banner = document.getElementById('loud-banner');
+  banner.classList.add('visible');
+  setTimeout(() => banner.classList.remove('visible'), 2000);
+}
+
+// ===== Spawn animals =====
+function restartSpawnTimer() {
+  clearInterval(spawnTimer);
+  spawnTimer = setInterval(() => {
+    if (isLoud) spawnAnimal();
+  }, settings.speed * 1000);
+}
+
+function spawnAnimal() {
+  const pool = ANIMALS.filter(a => settings.enabledAnimals.includes(a.emoji));
+  if (pool.length === 0) return;
+
+  const a = pool[Math.floor(Math.random() * pool.length)];
+  const el = document.createElement('div');
+  el.className = 'animal';
+  el.textContent = a.emoji;
+
+  // random position (avoid top HUD ~70px)
+  const x = 4 + Math.random() * 88; // %
+  const y = 12 + Math.random() * 80; // %
+  el.style.left = x + '%';
+  el.style.top = y + '%';
+
+  // random slight rotation for character
+  el.style.transform = `rotate(${(Math.random()-0.5)*20}deg)`;
+
+  document.getElementById('stage').appendChild(el);
+  animalEls.push(el);
+  animalCount++;
+  document.getElementById('stat-count').textContent = animalCount;
+
+  // transition to idle wobble after float-in
+  el.addEventListener('animationend', () => {
+    if (!el.classList.contains('leaving')) {
+      el.style.animation = '';
+      el.classList.add('idle');
+      el.style.animationDelay = (Math.random() * 1.5) + 's';
+    }
+  }, { once: true });
+}
+
+function startLeaving(el) {
+  if (el.classList.contains('leaving')) return;
+  el.classList.remove('idle');
+  el.style.animation = '';
+  void el.offsetWidth; // reflow
+  el.classList.add('leaving');
+  el.addEventListener('animationend', () => {
+    el.remove();
+    const idx = animalEls.indexOf(el);
+    if (idx > -1) animalEls.splice(idx, 1);
+    animalCount = Math.max(0, animalCount - 1);
+    document.getElementById('stat-count').textContent = animalCount;
+  }, { once: true });
+}
+
+// ===== dB bar threshold marker =====
+function updateThresholdMarker() {
+  const pct = (settings.threshold / 90) * 100;
+  document.getElementById('db-threshold-marker').style.left = pct + '%';
+}
+</script>
+</body>
+</html>
